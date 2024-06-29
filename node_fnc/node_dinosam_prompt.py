@@ -497,7 +497,9 @@ def sam_segment_new(
     sam_brightness_helper,
     sam_hint_threshold_helper,
     sam_helper_show,
-    device
+    device,
+    mask_area_threshold_max=1.0,
+
 ):  
     if hasattr(sam_model, 'model_name') and 'hq' in sam_model.model_name:
         sam_is_hq = True
@@ -584,6 +586,17 @@ def sam_segment_new(
         else:
             masks, quality , logits = predictor.predict_torch( point_coords=None, point_labels=None, boxes=transformed_boxes, mask_input=None, multimask_output=False)
 
+    if mask_area_threshold_max < 1.0:
+        for i, mask in enumerate(masks):
+            # Count non-zero pixel fraction
+            # Note that the mask is binary, so we use a simple summation
+            mask_area = torch.sum(mask)
+            total_area = mask.shape[1] * mask.shape[2] # mash.shape = [1, H, W]
+            assert mask_area <= total_area, "Mask is not binary: sum of mask values exceeds pixel count"
+            masked_fraction = mask_area / total_area
+            if masked_fraction > mask_area_threshold_max:
+                print(f"[sam_segment_new] Warning: Mask {i} has area {masked_fraction:.2f} > {mask_area_threshold_max:.2f} => wiping mask")
+                mask &= False
 
     # Finde den Index der Maske mit dem höchsten Qualitätswert
     combined_mask = torch.sum(masks, dim=0)
