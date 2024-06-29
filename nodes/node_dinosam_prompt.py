@@ -225,6 +225,13 @@ class GroundingDinoSAMSegment:
             },
             "optional":{
                 "vae": ("VAE", ),
+                "input_mask": ("MASK", ),
+                "input_mask_fraction_threshold": ("FLOAT", {
+                    "default": 0.5,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.01
+                })
             }
         }
     CATEGORY = "dnl13"
@@ -255,6 +262,8 @@ class GroundingDinoSAMSegment:
             multimask=False, 
             dedicated_device="Auto",
             vae=None,
+            input_mask=None,
+            input_mask_fraction_threshold=0.5,
             ):
         #
         #load Grounding Dino Model
@@ -317,6 +326,11 @@ class GroundingDinoSAMSegment:
         #      
         output_mapping = {}
         for index, item in tqdm(enumerate(image), total=len(image), desc=f"{dnl13} analyizing batch", unit="img", ncols=100, colour='green'):
+            if input_mask is None:
+                mask_area_threshold_max = input_mask_fraction_threshold
+            else:
+                msk = input_mask[index].squeeze(0)
+                mask_area_threshold_max = input_mask_fraction_threshold * (msk.sum() / (msk.shape[0] * msk.shape[1]))
             item = Image.fromarray(np.clip(255. * item.cpu().numpy(), 0, 255).astype(np.uint8)).convert('RGBA')
             boxes, phrases, logits = groundingdino_predict(grounding_dino_model, item, prompt, box_threshold, upper_confidence_threshold, lower_confidence_threshold, device)           
 
@@ -325,7 +339,7 @@ class GroundingDinoSAMSegment:
                 phrase_boxes[p] = {'box': [], 'mask': [], 'image': [], 'logits':[]}
 
             for i, phrase in enumerate(phrases):
-                sam_masks, masked_image, sam_grid_points, sam_grid_labels  = sam_segment_new(sam_model, item, boxes[i], clean_mask_holes, clean_mask_islands, mask_blur, mask_grow_shrink_factor, two_pass, sam_contrasts_helper, sam_brightness_helper,sam_hint_threshold_helper, sam_helper_show, device)
+                sam_masks, masked_image, sam_grid_points, sam_grid_labels  = sam_segment_new(sam_model, item, boxes[i], clean_mask_holes, clean_mask_islands, mask_blur, mask_grow_shrink_factor, two_pass, sam_contrasts_helper, sam_brightness_helper,sam_hint_threshold_helper, sam_helper_show, device, mask_area_threshold_max)
                 masked_image = masked_image.unsqueeze(0)
                 phrase_boxes[phrase]['box'].append(boxes[i].to(device))
                 phrase_boxes[phrase]['mask'].append(sam_masks.to(device))
